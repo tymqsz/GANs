@@ -1,3 +1,4 @@
 lightning_logs/
 MNIST/
 data/
+__pycache__/
