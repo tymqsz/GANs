@@ -9,25 +9,32 @@ class Generator(nn.Module):
     def __init__(self, noise_size):
         super().__init__()
 
-        self.lin1 = nn.Linear(noise_size, 1024)
+        self.lin1 = nn.Linear(noise_size, 256) #[-1, 1, 16, 16]
 
-        self.conv1 = nn.Conv2d(1, 64, (2, 2)) #[1, 4, 31, 31]
-        #self.convtrans1 = nn.ConvTranspose2d(64, 32, stride=1, padding=1, kernel_size=16) #[1, 8, 40, 40]
-        self.conv2 =  nn.Conv2d(64, 32, (3, 3)) #[1, 1, 28, 28])
-        self.conv3 =  nn.Conv2d(32, 1, (2, 2))
+        self.convtrans1 = nn.ConvTranspose2d(1, 16, stride=1, padding=0, output_padding=0,
+                                              dilation=1, kernel_size=5) #[-1, 8, 20, 20]
+        self.convtrans2 = nn.ConvTranspose2d(16, 32, stride=1, padding=0, output_padding=0,
+                                              dilation=1, kernel_size=5) #[-1, 16, 24, 24]
+        self.convtrans3 = nn.ConvTranspose2d(32, 64, stride=1, padding=0, output_padding=0,
+                                            dilation=1, kernel_size=9) #[-1, 32, 32, 32]
+        self.conv1 =  nn.Conv2d(64, 16, stride=1, kernel_size=3) #[-1, 1, 30, 30]
+        self.conv2 =  nn.Conv2d(16, 1, stride=1, kernel_size=3) #[-1, 1, 30, 30]
 
     def forward(self, x):
         x = F.relu(self.lin1(x))
 
-        x = x.view(-1, 1, 32, 32)
+        x = x.view(-1, 1, 16, 16)
 
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.conv3(x)
+        x = F.leaky_relu(self.convtrans1(x), 0.02)
+        x = F.leaky_relu(self.convtrans2(x), 0.02)
+        x = F.leaky_relu(self.convtrans3(x), 0.02)
+        x = F.leaky_relu(self.conv1(x), 0.02)
+        x = self.conv2(x)
 
         image = x.view(-1, 28, 28)
         
         return image
+    
 class Discriminator(nn.Module):
     def __init__(self):
         super().__init__()
