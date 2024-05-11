@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import numpy as np
+
 
 import matplotlib.pyplot as plt
 
@@ -9,21 +11,21 @@ class Generator(nn.Module):
     def __init__(self, noise_size):
         super().__init__()
 
-        self.lin1 = nn.Linear(noise_size, 256) #[-1, 1, 16, 16]
+        self.lin1 = nn.Linear(noise_size, 1024) #[-1, 1, 32, 32]
 
-        self.convtrans1 = nn.ConvTranspose2d(1, 16, stride=1, padding=0, output_padding=0,
-                                              dilation=1, kernel_size=5) #[-1, 8, 20, 20]
-        self.convtrans2 = nn.ConvTranspose2d(16, 32, stride=1, padding=0, output_padding=0,
-                                              dilation=1, kernel_size=5) #[-1, 16, 24, 24]
-        self.convtrans3 = nn.ConvTranspose2d(32, 64, stride=1, padding=0, output_padding=0,
-                                            dilation=1, kernel_size=9) #[-1, 32, 32, 32]
-        self.conv1 =  nn.Conv2d(64, 16, stride=1, kernel_size=3) #[-1, 1, 30, 30]
-        self.conv2 =  nn.Conv2d(16, 1, stride=1, kernel_size=3) #[-1, 1, 30, 30]
+        self.convtrans1 = nn.ConvTranspose2d(1, 8, stride=3, padding=0, output_padding=0,
+                                              dilation=1, kernel_size=7, bias=False) #[-1, 8, 100, 100]
+        self.convtrans2 = nn.ConvTranspose2d(8, 16, stride=2, padding=0, output_padding=0,
+                                              dilation=1, kernel_size=2, bias=False) #[-1, 16, 200, 200]
+        self.convtrans3 = nn.ConvTranspose2d(16, 16, stride=1, padding=0, output_padding=0,
+                                            dilation=5, kernel_size=13, bias=False) #[-1, 16, 260, 260]
+        self.conv1 =  nn.Conv2d(16, 8, stride=1, kernel_size=3, bias=False) #[-1, 1, 258, 258]
+        self.conv2 =  nn.Conv2d(8, 3, stride=1, kernel_size=3, bias=False) #[-1, 1, 258, 258]
 
     def forward(self, x):
         x = F.relu(self.lin1(x))
 
-        x = x.view(-1, 1, 16, 16)
+        x = x.view(-1, 1, 32, 32)
 
         x = F.leaky_relu(self.convtrans1(x), 0.02)
         x = F.leaky_relu(self.convtrans2(x), 0.02)
@@ -31,7 +33,7 @@ class Generator(nn.Module):
         x = F.leaky_relu(self.conv1(x), 0.02)
         x = self.conv2(x)
 
-        image = x.view(-1, 28, 28)
+        image = x.view(-1, 3, 256, 256)
         
         return image
     
@@ -40,7 +42,7 @@ class Discriminator(nn.Module):
         super().__init__()
         
         def conv_stack(in_channels, out_channels, ks_conv, ks_pool):
-            stack = [nn.Conv2d(in_channels, out_channels, kernel_size=ks_conv, stride=1)]
+            stack = [nn.Conv2d(in_channels, out_channels, kernel_size=ks_conv, stride=1, bias=False)]
 
             stack.append(nn.MaxPool2d(kernel_size=ks_pool, stride=1))
             stack.append(nn.LeakyReLU(0.2))
@@ -49,24 +51,25 @@ class Discriminator(nn.Module):
             return stack
         
         self.cnn = nn.Sequential(
-            *conv_stack(1, 64, 3, 3), #[-1, 32, 26, 26]
-            *conv_stack(64, 32, 3, 3), #[-1, 64, 24, 24]
-            *conv_stack(32, 16, 5, 5) #[-1, 32, 20, 20]
+            *conv_stack(3, 16, 3, 3), #[-1, 8, 252, 254]
+            *conv_stack(16, 16, 5, 5), #[-1, 16, 244, 244]
+            *conv_stack(16, 1, 3, 3) #[-1, 1, 240, 240]
         )
 
-        self.lin1 = nn.Linear(in_features=16*12*12, out_features=512) 
-        self.lin2 = nn.Linear(in_features=512, out_features=128)
-        self.lin3 = nn.Linear(in_features=128, out_features=1) 
+        self.lin1 = nn.Linear(in_features=1*240*240, out_features=1024) 
+        self.lin2 = nn.Linear(in_features=1024, out_features=256)
+        self.lin3 = nn.Linear(in_features=256, out_features=1) 
 
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x = x.view(-1, 1, 28, 28)
+        x = x.float()
+        x = x.view(-1, 3, 256, 256)
         
         x = self.cnn(x)
 
-        x = x.view(-1, 16*12*12)
+        x = x.view(-1, 1*240*240)
 
         x = self.relu(self.lin1(x))
         x = self.relu(self.lin2(x))
@@ -75,7 +78,7 @@ class Discriminator(nn.Module):
         return self.sigmoid(x)
 
 class GAN():
-    def __init__(self, noise_size, image_dims, lr=5e-4):
+    def __init__(self, noise_size, image_dims, lr=1e-3):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.noise_size = noise_size
         self.image_dims = image_dims
@@ -115,6 +118,8 @@ class GAN():
         loss.backward()
         self.d_optim.step()
         
+        print("disc: ", loss)
+
         # Generator training
         self.generator.train()
         noise = torch.randn(real_imgs.shape[0], self.noise_size)
@@ -126,6 +131,7 @@ class GAN():
         labels = self.discrimiantor(self.generator(noise))
 
         loss = self.loss(labels, desired_labels)
+        print("gen: ", loss)
         self.g_optim.zero_grad()
         loss.backward()
         self.g_optim.step()
@@ -138,11 +144,17 @@ class GAN():
         
 
         images = self.generator(noise)
-
+        
+        print(noise)
+        print(images[0])
+        
         for image in images:
             plt.figure()
             plt.title("generated image")
-            plt.imshow(image.detach().cpu(), cmap="gray")
+            image_np = np.transpose(image.detach().cpu().numpy(), (1, 2, 0))
+
+            print(image_np)
+            plt.imshow(image_np)
 
         plt.show()        
         self.generator.train()
