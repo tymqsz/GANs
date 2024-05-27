@@ -3,3 +3,5 @@ MNIST/
 data/
 __pycache__/
 images/
+celeba/
+__pycache__/

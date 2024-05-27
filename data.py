@@ -8,7 +8,7 @@ class MonetDataset(Dataset):
         self.transform = transform
     
     def __len__(self):
-        return len([name for name in os.listdir(self.input_dir)])
+        return len([name for name in os.listdir(self.input_dir) if "jpg" in name and "d" not in name])
     
     def __getitem__(self, idx):
         if self.transform is None:

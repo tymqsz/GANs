@@ -4,77 +4,109 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 
-
 import matplotlib.pyplot as plt
 
 class Generator(nn.Module):
     def __init__(self, noise_size):
         super().__init__()
 
-        self.lin1 = nn.Linear(noise_size, 1024) #[-1, 1, 32, 32]
+        self.convt1 = nn.ConvTranspose2d(100, 64*8, 4, 1, 0, bias=False) #4
+        self.bn1 = nn.BatchNorm2d(64*8)
+        self.convt2 = nn.ConvTranspose2d(64*8, 64*4, 4, 2, 1, bias=False) #10
+        self.bn2 = nn.BatchNorm2d(64*4)
+        self.convt3 = nn.ConvTranspose2d(64*4, 64*2, 4, 2, 1, bias=False) #22
+        self.bn3 = nn.BatchNorm2d(64*2)
+        self.convt4 = nn.ConvTranspose2d(64*2, 64*2, 4, 2, 1, bias=False) #46
+        self.bn4 = nn.BatchNorm2d(64*2)
+        self.convt5 = nn.ConvTranspose2d(64*2, 64, 4, 2, 1, bias=False)
+        self.bn5 = nn.BatchNorm2d(64)
+        self.convt6 = nn.ConvTranspose2d(64, 64, 4, 2, 1, bias=False)
+        self.bn6 = nn.BatchNorm2d(64)
+        
+        self.convt7 = nn.ConvTranspose2d(64, 1, 4, 2, 1, bias=False)
 
-        self.convtrans1 = nn.ConvTranspose2d(1, 16, stride=3, padding=0, output_padding=0,
-                                              dilation=1, kernel_size=7, bias=False) #[-1, 8, 100, 100]
-        self.convtrans2 = nn.ConvTranspose2d(16, 32, stride=2, padding=0, output_padding=0,
-                                              dilation=1, kernel_size=2, bias=False) #[-1, 16, 200, 200]
-        self.convtrans3 = nn.ConvTranspose2d(32, 32, stride=1, padding=0, output_padding=0,
-                                            dilation=5, kernel_size=13, bias=False) #[-1, 16, 260, 260]
-        self.conv1 =  nn.Conv2d(32, 32, stride=1, kernel_size=3, bias=False) #[-1, 1, 258, 258]
-        self.conv2 =  nn.Conv2d(32, 1, stride=1, kernel_size=3, bias=False) #[-1, 1, 258, 258]
+        self.relu = nn.ReLU(True)
+        self.tanh = nn.Tanh()
+
 
     def forward(self, x):
-        x = F.relu(self.lin1(x))
+        x = x.view(-1, 100, 1, 1)
 
-        x = x.view(-1, 1, 32, 32)
+        x = self.convt1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.convt2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.convt3(x)
+        x = self.bn3(x)
+        x = self.relu(x)
+        x = self.convt4(x)
+        x = self.bn4(x)
+        x = self.relu(x)
+        x = self.convt5(x)
+        x = self.bn5(x)
+        x = self.relu(x)
+        x = self.convt6(x)
+        x = self.bn6(x)
+        x = self.relu(x)
+        x = self.convt7(x)
 
-        x = F.leaky_relu(self.convtrans1(x), 0.02)
-        x = F.leaky_relu(self.convtrans2(x), 0.02)
-        x = F.leaky_relu(self.convtrans3(x), 0.02)
-        x = F.leaky_relu(self.conv1(x), 0.02)
-        x = self.conv2(x)
+
         image = x.view(-1, 1, 256, 256)
         
         return image
-    
+
 class Discriminator(nn.Module):
     def __init__(self):
         super().__init__()
         
-        def conv_stack(in_channels, out_channels, ks_conv, ks_pool):
-            stack = [nn.Conv2d(in_channels, out_channels, kernel_size=ks_conv, stride=1, bias=False)]
+        self.conv1 = nn.Conv2d(1, 64, 4, 2, 1, bias=False)
+        self.conv2 = nn.Conv2d(64, 128, 4, 2, 1, bias=False)
+        self.conv3 = nn.Conv2d(128, 256, 4, 2, 1, bias=False)
+        self.conv4 = nn.Conv2d(256, 512, 4, 2, 1, bias=False)
+        self.conv5 = nn.Conv2d(512, 512, 4, 2, 1, bias=False)
+        self.conv6 = nn.Conv2d(512, 256, 4, 2, 1, bias=False)
+        self.conv7 = nn.Conv2d(256, 1, 4, 2, 0, bias=False)
 
-            stack.append(nn.MaxPool2d(kernel_size=ks_pool, stride=1))
-            stack.append(nn.LeakyReLU(0.2))
-            stack.append(nn.Dropout2d())
-            
-            return stack
-        
-        self.cnn = nn.Sequential(
-            *conv_stack(1, 32, 3, 3), #[-1, 8, 252, 254]
-            *conv_stack(32, 16, 5, 5), #[-1, 16, 244, 244]
-            *conv_stack(16, 1, 3, 3) #[-1, 1, 240, 240]
-        )
+        self.bn1 = nn.BatchNorm2d(128)
+        self.bn2 = nn.BatchNorm2d(256)
+        self.bn3 = nn.BatchNorm2d(512)
 
-        self.lin1 = nn.Linear(in_features=1*240*240, out_features=1024) 
-        self.lin2 = nn.Linear(in_features=1024, out_features=256)
-        self.lin3 = nn.Linear(in_features=256, out_features=1) 
-
-        self.relu = nn.ReLU()
+        self.leakyrelu = nn.LeakyReLU(0.2, inplace=True)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = x.float()
         x = x.view(-1, 1, 256, 256)
         
-        x = self.cnn(x)
+        x = self.conv1(x)
+        x = self.leakyrelu(x)
 
-        x = x.view(-1, 1*240*240)
+        x = self.conv2(x)
+        x = self.bn1(x)
+        x = self.leakyrelu(x)
 
-        x = self.relu(self.lin1(x))
-        x = self.relu(self.lin2(x))
-        x = self.lin3(x)
+        x = self.conv3(x)
+        x = self.bn2(x)
+        x = self.leakyrelu(x)
 
-        return self.sigmoid(x)
+        x = self.conv4(x)
+        x = self.bn3(x)
+        x = self.leakyrelu(x)
+
+        x = self.conv5(x)
+        x = self.bn3(x)
+        x = self.leakyrelu(x)
+
+        x = self.conv6(x)
+        x = self.bn2(x)
+        x = self.leakyrelu(x)
+
+        x = self.conv7(x)
+        x = self.sigmoid(x)
+
+        return x.view(-1, 1)
 
 class GAN():
     def __init__(self, noise_size, image_dims, lr=1e-4):
@@ -105,8 +137,8 @@ class GAN():
             fake_imgs = self.generator(noise)
             fake_imgs.detach()
 
-        fake_labels = torch.zeros(real_imgs.shape[0], 1).to(device=self.device)
-        real_labels = torch.ones(real_imgs.shape[0], 1).to(device=self.device)
+        fake_labels = torch.ones(real_imgs.shape[0], 1).to(device=self.device)
+        real_labels = torch.zeros(real_imgs.shape[0], 1).to(device=self.device)
 
         yp = self.discrimiantor(fake_imgs)
         fake_loss = self.loss(y_pred=yp, y_true=fake_labels)
@@ -123,7 +155,7 @@ class GAN():
         noise = torch.randn(real_imgs.shape[0], self.noise_size)
         noise = noise.to(device=self.device)
 
-        desired_labels = torch.ones(real_imgs.shape[0], 1)
+        desired_labels = torch.zeros(real_imgs.shape[0], 1)
         desired_labels = desired_labels.to(device=self.device)
 
         labels = self.discrimiantor(self.generator(noise))
@@ -135,18 +167,25 @@ class GAN():
        
        # first zero grad + no self.discirmintor.eval()
     
-    def plot_samples(self, n_samples=3):
-        noise = torch.randn(n_samples, self.noise_size)
-        noise = noise.to(device=self.device)
+    def plot_samples(self, epoch, n_samples=3, noise=None):
+        if noise is None:
+            noise = torch.randn(n_samples, self.noise_size)
+            noise = noise.to(device=self.device)
+        else:
+            noise = noise.to(device=self.device)
+            
         
+        with torch.no_grad():
+            images = self.generator(noise)
 
-        images = self.generator(noise)
-        
-        for image in images:
-            plt.figure()
-            plt.title("generated image")
 
-            plt.imshow(image.detach().cpu().view(256, 256), cmap="gray")
+        fig = plt.figure(figsize=(10, 6))
 
-        plt.show()        
-        self.generator.train()
+        for i, image in enumerate(images):
+            ax = fig.add_subplot(1, 3, i+1)
+            ax.imshow(image.detach().cpu().view(256, 256), cmap="gray")
+            if i == 0:
+                ax.set_title(f"epoch {epoch}")
+            ax.axis('off')
+        plt.tight_layout()
+        plt.show()      
